@@ -77,6 +77,12 @@
         throw std::runtime_error("device mismatch");                                  \
     } while (0)
 
+#define EXCEPTION_INVALID_ARGUMENT(MSG__) \
+do { \
+    std::cerr << "[ERROR] Invalid argument: " << MSG__ << EXCEPTION_LOCATION_MSG << std::endl; \
+    throw std::invalid_argument(MSG__); \
+    } while (0)
+
 #define CHECK_SAME_DEVICE(FIRST, ...)                            \
     do {                                                         \
         for (const auto &tensor___ : {__VA_ARGS__}) {            \
@@ -86,3 +92,4 @@
             }                                                    \
         }                                                        \
     } while (0)
+

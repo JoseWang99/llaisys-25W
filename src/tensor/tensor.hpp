@@ -6,12 +6,30 @@ namespace llaisys {
 class Tensor;
 using tensor_t = std::shared_ptr<Tensor>;
 
+/**
+ * @brief 表示张量的元数据结构体。
+ *
+ * @struct TensorMeta
+ * @var dtype 张量的数据类型（llaisysDataType_t）。
+ * @var shape 张量的形状，每个元素表示对应维度的大小。
+ * @var strides 张量的步长，每个元素表示在该维度上移动一个元素时需要跳过的内存单元数。
+ */
 struct TensorMeta {
     llaisysDataType_t dtype;
     std::vector<size_t> shape;
     std::vector<ptrdiff_t> strides;
 };
 
+/**
+ * @class Tensor
+ * @brief 表示多维张量的数据结构，支持多种数据类型和设备。
+ *
+ * 构造函数被私有化的原因：
+ * - 通过私有化构造函数，禁止用户直接实例化 Tensor 对象，强制用户通过静态工厂方法（如 create）来创建 Tensor 实例。
+ * - 这样可以更好地控制对象的创建流程，例如内存分配、元数据初始化等，保证对象始终处于有效状态。
+ * - 便于实现引用计数、内存池等高级特性，提升性能和安全性。
+ * - 统一管理 Tensor 的生命周期，防止资源泄漏或非法操作。
+ */
 class Tensor {
 private:
     TensorMeta _meta;
