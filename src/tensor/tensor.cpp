@@ -224,7 +224,6 @@ tensor_t Tensor::view(const std::vector<size_t> &shape) const {
 }
 
 tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
-    std::cout << "test slice" << std::endl;
     if(dim >= this->ndim()) {
         EXCEPTION_INVALID_ARGUMENT("Dimension index out of range");
     }
