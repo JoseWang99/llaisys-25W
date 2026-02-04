@@ -136,6 +136,17 @@ if __name__ == "__main__":
 
     end_time = time.time()
 
+    # === [新增] 逐个解码 Token ===
+    print("\n=== Generated Tokens (Detailed) ===")
+    for i, tok in enumerate(llaisys_tokens):
+        try:
+            decoded = tokenizer.decode([tok])
+            print(f"Token {i}: {tok:6d} -> '{decoded}'")
+        except:
+            print(f"Token {i}: {tok:6d} -> [decode failed]")
+    print()
+    # ===============================
+
     print("\n=== Your Result ===\n")
     print("Tokens:")
     print(llaisys_tokens)
