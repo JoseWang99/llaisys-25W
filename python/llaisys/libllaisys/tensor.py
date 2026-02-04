@@ -76,3 +76,22 @@ def load_tensor(lib):
         c_size_t,  # end  : exclusive
     ]
     lib.tensorSlice.restype = llaisysTensor_t
+
+from .llaisys_types import DataType
+
+def dtype_str_to_enum(s: str) -> int:
+    s = s.lower()
+    mapping = {
+        "float32": DataType.F32,
+        "float": DataType.F32,
+        "float16": DataType.F16,
+        "half": DataType.F16,
+        "bfloat16": DataType.BF16,
+        "int64": DataType.I64,
+        "long": DataType.I64,
+        "int32": DataType.I32,
+        "int": DataType.I32,
+    }
+    if s in mapping:
+        return mapping[s].value
+    return DataType.F32.value
