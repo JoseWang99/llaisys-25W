@@ -3,7 +3,6 @@
 #include "../../core/context/context.hpp"
 #include "../../utils/check.hpp"
 
-// Ops (using direct HPP inclusion for internal implementation)
 #include "../../ops/embedding/op.hpp"
 #include "../../ops/rms_norm/op.hpp"
 #include "../../ops/linear/op.hpp"
@@ -151,13 +150,13 @@ int64_t llaisysQwen2ModelInfer(LlaisysQwen2Model* model, int64_t* token_ids, siz
     );
     ops::embedding(hidden_states, input, model->t(model->weights.in_embed));
 
-    // === DEBUG: 检查 Embedding 输出 ===
-    printf("[DEBUG] After Embedding [0:5] = ");
-    const float* emb_data = reinterpret_cast<const float*>(hidden_states->data());
-    for (int i = 0; i < std::min(5, (int)model->meta.hs); i++) {
-        printf("%.4f ", emb_data[i]);
-    }
-    printf("\n");
+    // // === DEBUG: 检查 Embedding 输出 ===
+    // printf("[DEBUG] After Embedding [0:5] = ");
+    // const float* emb_data = reinterpret_cast<const float*>(hidden_states->data());
+    // for (int i = 0; i < std::min(5, (int)model->meta.hs); i++) {
+    //     printf("%.4f ", emb_data[i]);
+    // }
+    // printf("\n");
 
     // --- 3. Layers ---
     for (size_t i = 0; i < model->meta.nlayer; ++i) {
@@ -229,7 +228,7 @@ int64_t llaisysQwen2ModelInfer(LlaisysQwen2Model* model, int64_t* token_ids, siz
 
         ops::add(hidden_states, residual, o_linear);
 
-        // --- MLP Block ---
+        //  MLP Block 
         tensor_t mlp_input = hidden_states;
         tensor_t residual_mlp = mlp_input;
 
@@ -256,13 +255,13 @@ int64_t llaisysQwen2ModelInfer(LlaisysQwen2Model* model, int64_t* token_ids, siz
     tensor_t final_norm_out = Tensor::create(hidden_states->shape(), hidden_states->dtype(), hidden_states->deviceType());
     ops::rms_norm(final_norm_out, hidden_states, model->t(model->weights.out_norm_w), model->meta.epsilon);
 
-    // === DEBUG: 检查 Final Norm 输出 ===
-    printf("[DEBUG] After Final Norm [0:5] = ");
-    const float* norm_data = reinterpret_cast<const float*>(final_norm_out->data());
-    for (int i = 0; i < std::min(5, (int)model->meta.hs); i++) {
-        printf("%.4f ", norm_data[i]);
-    }
-    printf("\n");
+    // // === DEBUG: 检查 Final Norm 输出 ===
+    // printf("[DEBUG] After Final Norm [0:5] = ");
+    // const float* norm_data = reinterpret_cast<const float*>(final_norm_out->data());
+    // for (int i = 0; i < std::min(5, (int)model->meta.hs); i++) {
+    //     printf("%.4f ", norm_data[i]);
+    // }
+    // printf("\n");
 
     tensor_t last_token_emb = create_tensor({1, static_cast<int64_t>(model->meta.hs)}, hidden_states->dtype(), model->device_type);
     
@@ -274,41 +273,18 @@ int64_t llaisysQwen2ModelInfer(LlaisysQwen2Model* model, int64_t* token_ids, siz
     tensor_t logits = create_tensor({1, static_cast<int64_t>(model->meta.voc)}, hidden_states->dtype(), model->device_type);
     ops::linear(logits, last_token_emb, model->t(model->weights.out_embed), nullptr);
 
-    // === DEBUG: 检查 Logits ===
-    const float* logits_data = reinterpret_cast<const float*>(logits->data());
-    
-    printf("[DEBUG] Logits[0:10] = ");
-    for (int i = 0; i < std::min(10, (int)model->meta.voc); i++) {
-        printf("%.4f ", logits_data[i]);
-    }
-    printf("\n");
-    
-    // 手动计算 ArgMax
-    float max_val = logits_data[0];
-    int64_t max_idx = 0;
-    for (size_t i = 1; i < model->meta.voc; i++) {
-        if (logits_data[i] > max_val) {
-            max_val = logits_data[i];
-            max_idx = i;
-        }
-    }
-    printf("[DEBUG] Manual ArgMax: idx=%ld, val=%.4f\n", max_idx, max_val);
-    
-    // 检查异常情况
-    bool all_zero = true;
-    bool has_nan = false;
-    for (size_t i = 0; i < model->meta.voc; i++) {
-        if (logits_data[i] != 0.0f) all_zero = false;
-        if (std::isnan(logits_data[i])) has_nan = true;
-    }
-    if (all_zero) printf("[WARNING] All logits are ZERO!\n");
-    if (has_nan) printf("[WARNING] Logits contain NaN!\n");
+
+    tensor_t max_idx = create_tensor({1}, LLAISYS_DTYPE_I64, model->device_type);
+    tensor_t max_val = create_tensor({1}, hidden_states->dtype(), model->device_type);
+
+    ops::argmax(max_idx, max_val, logits);
+
+    int64_t next_token = *reinterpret_cast<int64_t *>(max_idx->data());
 
     // Update global position
     model->pos += ntoken;
-
-    // 直接返回手动计算的结果
-    return max_idx;
+    
+    return next_token;
 }
 
 } // extern "C"

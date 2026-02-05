@@ -24,10 +24,7 @@ class Qwen2:
             
         # 2. 准备 Meta
         self.meta = LlaisysQwen2Meta()
-        
-        # [Fix] 强制指定使用 F32 精度，配合下面权重的强转
         self.meta.dtype = DataType.F32.value
-
         self.meta.nlayer = self.config["num_hidden_layers"]
         self.meta.hs = self.config["hidden_size"]
         self.meta.nh = self.config["num_attention_heads"]
@@ -40,13 +37,7 @@ class Qwen2:
         self.meta.theta = self.config.get("rope_theta", 1000000.0)
         self.meta.end_token = self.config.get("eos_token_id", 151643)
 
-        # === 调试打印 Meta 参数 ===
-        print("=== Python Meta Params ===")
-        print(f"nlayer={self.meta.nlayer}, hs={self.meta.hs}, nh={self.meta.nh}")
-        print(f"vocab={self.meta.voc}, maxseq={self.meta.maxseq}")
-        # ======================
-
-        # 3. 创建 C 模型实例
+        # 3. 创建 C API 模型实例
         self.model_handle = LIB_LLAISYS.llaisysQwen2ModelCreate(
             ctypes.byref(self.meta), 
             self.device.value, 
@@ -57,17 +48,6 @@ class Qwen2:
         if not self.model_handle:
             raise RuntimeError("Failed to create Qwen2 model backend")
 
-        # [Fix] 明确声明 infer 签名，强制使用 c_int64 以匹配 C++ 行为
-        try:
-            LIB_LLAISYS.llaisysQwen2ModelInfer.argtypes = [
-                llaisysQwen2Model_t,
-                ctypes.POINTER(ctypes.c_int64), # 必须是 int64
-                ctypes.c_size_t,
-            ]
-            LIB_LLAISYS.llaisysQwen2ModelInfer.restype = ctypes.c_int64
-        except Exception:
-            pass
-            
         # 4. 加载权重
         self._load_weights()
 
@@ -99,11 +79,8 @@ class Qwen2:
     def _torch_to_llaisys_tensor(tensor: torch.Tensor, device: DeviceType) -> Tensor:
         cpu_tensor = tensor.detach().cpu().contiguous()
         
-        # === [Fix] 强制转换所有浮点权重为 F32 ===
-        # 避免 BF16 在 C++ 端可能的计算兼容性问题
         if cpu_tensor.is_floating_point():
             cpu_tensor = cpu_tensor.to(torch.float32)
-        # ==================================
         
         if torch.isnan(cpu_tensor).any():
             print(f"Warning: Computed tensor contains NaN! dtype={cpu_tensor.dtype}")
@@ -130,7 +107,6 @@ class Qwen2:
         llaisys_tensor.dtype = llaisys_dtype
         
         # 3. 加载数据
-        # 由于上面已经强转为 F32，这里通常走 numpy 路径
         if cpu_tensor.dtype == torch.bfloat16:
             LIB_LLAISYS.tensorLoad(handle, ctypes.c_void_p(cpu_tensor.data_ptr()))
         else:
@@ -156,11 +132,9 @@ class Qwen2:
             
             f_path = key_to_file[name]
             
-            # 使用 PyTorch 加载
             with safetensors.safe_open(f_path, framework="pt") as f:
                 pt_tensor = f.get_tensor(name)
                 
-            # 转换为 LLAISYS tensor
             t = self._torch_to_llaisys_tensor(pt_tensor, self.device)
             return t.handle
 
@@ -185,37 +159,37 @@ class Qwen2:
             weights_c.mlp_up_w[i] = load(f"{p}.mlp.up_proj.weight")
             weights_c.mlp_down_w[i] = load(f"{p}.mlp.down_proj.weight")
 
-        # === 调试：回读验证 C++ 内存 ===
-        print("=== Verifying Weights in C++ Memory ===")
-        try:
-            LIB_LLAISYS.tensorGetData.argtypes = [ctypes.c_void_p]
-            LIB_LLAISYS.tensorGetData.restype = ctypes.c_void_p
+        # # === 调试：回读验证 C++ 内存 ===
+        # print("=== Verifying Weights in C++ Memory ===")
+        # try:
+        #     LIB_LLAISYS.tensorGetData.argtypes = [ctypes.c_void_p]
+        #     LIB_LLAISYS.tensorGetData.restype = ctypes.c_void_p
             
-            ptr = LIB_LLAISYS.tensorGetData(weights_c.in_embed)
-            if not ptr:
-                print("FATAL: tensorGetData returned NULL!")
-            else:
-                arr = (ctypes.c_float * 10).from_address(ptr)
-                debug_vals = list(arr)
-                print(f"Embed Weight [0:10]: {[f'{x:.4e}' for x in debug_vals]}")
+        #     ptr = LIB_LLAISYS.tensorGetData(weights_c.in_embed)
+        #     if not ptr:
+        #         print("FATAL: tensorGetData returned NULL!")
+        #     else:
+        #         arr = (ctypes.c_float * 10).from_address(ptr)
+        #         debug_vals = list(arr)
+        #         print(f"Embed Weight [0:10]: {[f'{x:.4e}' for x in debug_vals]}")
                 
-                if all(x == 0 for x in debug_vals):
-                    print("!!! CRITICAL FAILURE: Weights are ALL ZERO in C++ memory !!!")
-                else:
-                    print("Weights look OK.")
-        except Exception as e:
-            print(f"Verification failed: {e}")
+        #         if all(x == 0 for x in debug_vals):
+        #             print("!!! CRITICAL FAILURE: Weights are ALL ZERO in C++ memory !!!")
+        #         else:
+        #             print("Weights look OK.")
+        # except Exception as e:
+        #     print(f"Verification failed: {e}")
 
-        # 打印指针检查
-        try:
-            def _ptr_val(x):
-                try: return int(x)
-                except: return None
-            print("weight pointers:",
-                  "in_embed=", _ptr_val(weights_c.in_embed),
-                  "out_norm_w=", _ptr_val(weights_c.out_norm_w))
-        except:
-            pass
+        # # 打印指针检查
+        # try:
+        #     def _ptr_val(x):
+        #         try: return int(x)
+        #         except: return None
+        #     print("weight pointers:",
+        #           "in_embed=", _ptr_val(weights_c.in_embed),
+        #           "out_norm_w=", _ptr_val(weights_c.out_norm_w))
+        # except:
+        #     pass
 
     def __del__(self):
         if hasattr(self, 'model_handle') and self.model_handle:
@@ -245,7 +219,6 @@ class Qwen2:
         if max_steps is None:
             max_steps = 1
         
-        # 保存完整对话历史用于返回
         full_response = list(tokens)
         
         # 下一轮要喂给模型的 tokens (初始为 Prompt)
@@ -258,11 +231,8 @@ class Qwen2:
             # 准备输入数组
             in_len = len(next_input_tokens)
             
-            # [Fix] 使用 c_int64，防止 C++ 读取越界/错位
             c_in_buf = (ctypes.c_int64 * in_len)(*next_input_tokens)
             buf_ptr = ctypes.cast(c_in_buf, ctypes.POINTER(ctypes.c_int64))
-            
-            print(f"[infer] C++ step={step} in_len={in_len} ...", end="", flush=True)
             t0 = time.time()
             
             # 推理：返回下一个 token ID
@@ -273,18 +243,12 @@ class Qwen2:
             )
             
             dt = time.time() - t0
-            print(f" Done. next={next_token} t={dt:.3f}s", flush=True)
-            
             full_response.append(next_token)
             
             if next_token == self.meta.end_token:
                 print(f"[infer] Stop token reached (token={next_token}).")
                 break
             
-            
-            
-            # 【重要】下一轮只传最新生成的 1 个 token (Decode 阶段)
-            # C++ 端应当内部维护 KV Cache 指针
             next_input_tokens = [next_token]
             
         return full_response

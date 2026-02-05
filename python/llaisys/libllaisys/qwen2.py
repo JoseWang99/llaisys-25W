@@ -29,7 +29,6 @@ class LlaisysQwen2Meta(ctypes.Structure):
         ("use_sliding_window", c_int),
     ]
 
-# 使用 POINTER(llaisysTensor_t) 是因为 C 结构中是指针数组
 class LlaisysQwen2Weights(ctypes.Structure):
     _fields_ = [
         ("in_embed", llaisysTensor_t),
@@ -61,7 +60,5 @@ LIB_LLAISYS.llaisysQwen2ModelDestroy.restype = None
 LIB_LLAISYS.llaisysQwen2ModelWeights.argtypes = [llaisysQwen2Model_t]
 LIB_LLAISYS.llaisysQwen2ModelWeights.restype = POINTER(LlaisysQwen2Weights)
 
-LIB_LLAISYS.llaisysQwen2ModelInfer.argtypes = [llaisysQwen2Model_t, 
-                                                POINTER(c_int64), 
-                                                c_size_t]
-LIB_LLAISYS.llaisysQwen2ModelInfer.restype = c_int64
+LIB_LLAISYS.llaisysQwen2ModelInfer.argtypes = [llaisysQwen2Model_t, ctypes.POINTER(ctypes.c_int64),]
+LIB_LLAISYS.llaisysQwen2ModelInfer.restype = ctypes.c_int64
